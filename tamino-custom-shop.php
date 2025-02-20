@@ -137,6 +137,20 @@ class CustomPDF extends TCPDF {
 function generate_product_pdf($product_id) {
     if (!$product_id) return false;
 
+    function encode_for_tcpdf($text) {
+        return mb_convert_encoding($text, 'UTF-8', 'auto'); // Ensure text is UTF-8 encoded
+    }
+
+    // Define properties
+    $font_name = 'dejavusans';
+    $lineheight = 1.5;             // Line height for cells
+    $fontsize_header = 13;         // Font size for headers
+    $fontsize_content = 10;        // Font size for content
+    $shortdescription_textlength = 447; // Length of the short description
+    $description_textlength = 1932;     // Length of the full description
+    $image_width = 50;             // Width for images in the PDF
+    $image_height = 50;            // Height for images in the PDF
+
     error_log("🔍 Starting PDF generation for product ID: " . $product_id);
 
     $upload_dir = wp_upload_dir();
@@ -161,28 +175,65 @@ function generate_product_pdf($product_id) {
         error_log("✅ Initializing TCPDF...");
         $pdf = new CustomPDF();
         $pdf->SetCreator(PDF_CREATOR);
+        $pdf->SetAuthor('Tamino Travel');
         $pdf->SetTitle(esc_html($product->get_title()));
         $pdf->SetMargins(10, 10, 10);
         $pdf->SetAutoPageBreak(TRUE, 10);
         $pdf->setPrintHeader(false);
         $pdf->setPrintFooter(true);
+
         $pdf->AddPage();
-        $pdf->SetFont('dejavusans', '', 12);
+        $pdf->SetFont($font_name, '', $fontsize_header);
 
         // **STEP 1: TITLE ONLY**
         error_log("📄 Adding title...");
-        $pdf->Cell(0, 10, esc_html($product->get_title()), 0, 1, 'C');
+        $pdf->Cell(0, $lineheight * 10, esc_html($product->get_title()), 0, 1, 'C');
         $pdf->Ln(5);
 
-        // **STEP 2: IMAGE HANDLING**
+        // **STEP 2: IMAGE AND SHORT DESCRIPTION HANDLING**
+        /*******************************************************************
+         * ************************ TOUR IMAGE  ****************************
+         *******************************************************************/
         error_log("🖼 Checking product image...");
         $image_id = $product->get_image_id();
+        $short_description = $product->get_short_description(); // Get WooCommerce short description
+
         if ($image_id) {
             $image_url = wp_get_attachment_url($image_id);
             if ($image_url) {
                 error_log("✅ Image found: " . $image_url);
-                $pdf->Image($image_url, 10, 30, 50);
-                $pdf->Ln(50);
+
+                // Fetch image dimensions
+                list($orig_width, $orig_height) = @getimagesize($image_url);
+                $aspect_ratio = $orig_width / $orig_height;
+
+                // Define image width & height while maintaining aspect ratio
+                $image_width = 70; // Fixed width
+                $image_height = $image_width / $aspect_ratio; // Adjust height dynamically
+
+                // Insert Image at top-left corner
+                $pdf->Image($image_url, 10, 30, $image_width, $image_height, '', '', 'L', false, 300, '', false, false, 0, false, false, false);
+
+                // Define text width (remaining space after image)
+                $text_x = $image_width + 20; // Position right of the image
+                $text_width = 190 - $text_x; // Remaining space for text
+
+                /*******************************************************************
+                * ********************* SHORT DESCRIPTION  *************************
+                *******************************************************************/    
+                // Wrap short description next to image
+                $pdf->SetXY($text_x, 30); // Move cursor beside image
+                if (!empty($short_description)) {
+                    error_log("📄 Adding short description...");
+                    $pdf->SetFont($font_name, '', $fontsize_content);
+                    $short_description_html = '<p style="line-height: ' . $lineheight . ';">' . nl2br(esc_html(substr($short_description, 0, $shortdescription_textlength))) . '</p>';
+                    $pdf->writeHTMLCell($text_width, 0, '', '', $short_description_html, 0, 1, 0, true, 'L', true);
+                } else {
+                    error_log("⚠️ No short description found.");
+                }
+
+                // Move cursor below the image
+                $pdf->SetXY(10, 30 + $image_height + 10);
             } else {
                 error_log("⚠️ Image ID exists but URL is missing!");
             }
@@ -190,13 +241,158 @@ function generate_product_pdf($product_id) {
             error_log("⚠️ No image attached to product.");
         }
 
+
+/***********************************************************************
+ ************************* GALLERY IMAGES *******************************
+ ************************************************************************/
+// Retrieve WooCommerce gallery images
+$gallery_images = $product->get_gallery_image_ids();
+
+$image_height = 25;  // Fixed height for uniformity
+$x_position = 10;    // Starting X position for the first image
+$y_position = $pdf->GetY();  // Current Y position in the PDF
+$spacing = 5;        // Spacing between images
+$counter = 0;
+$max_images = 4;     // Limit to 3 images only
+
+// Check if gallery images are valid
+if (!empty($gallery_images) && is_array($gallery_images)) {
+    foreach ($gallery_images as $image_id) {
+        if ($counter >= $max_images) break; // Stop after 3 images
+
+        $image_url = wp_get_attachment_url($image_id);
+        $image_path = get_attached_file($image_id);
+
+        if ($image_url && file_exists($image_path)) {
+            // Get original image dimensions
+            list($original_width, $original_height) = getimagesize($image_path);
+
+            if ($original_width > 0 && $original_height > 0) {
+                // Maintain aspect ratio
+                $image_width = ($original_width / $original_height) * $image_height;
+
+                // Place the image in the PDF
+                $pdf->Image($image_url, $x_position, $y_position, $image_width, $image_height);
+
+                // Update X position for the next image
+                $x_position += $image_width + $spacing;
+                $counter++;
+            } else {
+                error_log("⚠️ Invalid image dimensions for ID: " . $image_id);
+            }
+        } else {
+            error_log("⚠️ Image file not found: " . $image_url);
+        }
+    }
+
+    // Insert a new line after images
+    $pdf->Ln($image_height + 5);
+} else {
+    error_log("⚠️ No gallery images found for this product.");
+}
+
+
+
+        /*******************************************************************
+         * *********************** DESCRIPTION  ****************************
+         *******************************************************************/    
         // **STEP 3: DESCRIPTION**
         error_log("📝 Adding product description...");
-        $pdf->SetFont('dejavusans', '', 10);
-        $pdf->MultiCell(0, 6, esc_html($product->get_short_description()), 0, 'L');
-        $pdf->Ln(5);
-        $pdf->MultiCell(0, 6, esc_html($product->get_description()), 0, 'L');
+        $pdf->SetFont($font_name, '', $fontsize_content);
+        $description = substr(esc_html($product->get_description()), 0, $description_textlength);
+
+        $pdf->MultiCell(0, $lineheight * 5, $description, 0, 'L');
         $pdf->Ln(10);
+
+
+// Retrieve "Orte" from WooCommerce product meta
+$orte = maybe_unserialize(get_post_meta($product_id, '_tamino_travel_orte', true));
+
+if (is_array($orte) && count($orte) > 0) {
+    // Add a new page if needed
+    $pdf->AddPage();
+
+    // Title for the section
+    $pdf->SetFont($font_name, 'B', $fontsize_header);
+    $pdf->Cell(0, 10, 'Orte (Stations)', 0, 1, 'C'); // Centered title
+    $pdf->Ln(5);
+
+    foreach ($orte as $station_id) {
+        // Retrieve station post
+        $station_post = get_post($station_id);
+
+        if ($station_post) {
+            // Get station title and content
+            $station_title = encode_for_tcpdf($station_post->post_title);
+$station_content = encode_for_tcpdf(trim(preg_replace('/\s+/', ' ', strip_tags($station_post->post_content))));
+            $station_content = substr($station_content, 0, 300) . '...'; // Limit text length
+
+            // Get station image
+            $station_image_id = get_post_thumbnail_id($station_id);
+            $station_image_url = wp_get_attachment_url($station_image_id);
+
+            // Define fixed width
+            $image_width = 40; // Fixed width
+            $image_height = 0; // Height will be calculated dynamically
+
+            if ($station_image_url) {
+                // Get image dimensions
+                $image_info = getimagesize($station_image_url);
+                if ($image_info) {
+                    $original_width = $image_info[0];
+                    $original_height = $image_info[1];
+
+                    // Calculate new height based on aspect ratio
+                    $image_height = ($original_height / $original_width) * $image_width;
+                }
+            }
+
+            // Image & Text Placement Variables
+            $image_x = 10;   // Left margin for image
+            $image_y = $pdf->GetY(); // Get current position for alignment
+            $text_x = $image_x + $image_width + 10; // Text starts after image
+            $text_width = 190 - $text_x; // Remaining width for text
+
+            // Display image if available
+            if ($station_image_url && $image_height > 0) {
+                $pdf->Image($station_image_url, $image_x, $image_y, $image_width, $image_height);
+            }
+
+            // Display title next to the image
+            $pdf->SetXY($text_x, $image_y);
+            $pdf->SetFont($font_name, 'B', $fontsize_content);
+            $pdf->Cell($text_width, 6, $station_title, 0, 1); // No extra line break
+
+            // Display description immediately after title
+            $pdf->SetXY($text_x, $image_y + 7); // Moves text directly below title
+            $pdf->SetFont($font_name, '', $fontsize_content);
+            $pdf->MultiCell($text_width, 6, $station_content, 0, 'L');
+
+            // Move down a bit before adding the separator
+            $pdf->Ln(5);
+
+            // Get station URL
+            $station_url = get_permalink($station_id);
+            $separator_text = "Für weitere Informationen besuchen Sie " . $station_url;
+
+            // Draw first horizontal line
+            $pdf->Cell(0, 0, '', 'T', 1, 'C'); // Thin line
+
+            // Insert centered text
+            $pdf->SetFont($font_name, '', $fontsize_content - 2);
+            $pdf->Cell(0, 6, encode_for_tcpdf($separator_text), 0, 1, 'C');
+
+            // Draw second horizontal line
+            $pdf->Cell(0, 0, '', 'T', 1, 'C'); // Thin line
+
+            // Move cursor below the section
+            $pdf->Ln(10);
+        }
+    }
+}
+
+
+
 
         // **STEP 4: SAVE PDF**
         error_log("💾 Saving PDF...");
@@ -212,6 +408,10 @@ function generate_product_pdf($product_id) {
         error_log("❌ PDF Generation Error: " . $e->getMessage());
         return false;
     }
+
+
+
 }
 
-add_action('woocommerce_process_product_meta', 'auto_generate_product_pdf_on_save');
+/** THIS WOUL DO SOMETHING ON SAVE */
+//add_action('woocommerce_process_product_meta', 'auto_generate_product_pdf_on_save');
