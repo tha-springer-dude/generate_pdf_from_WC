@@ -242,54 +242,54 @@ function generate_product_pdf($product_id) {
         }
 
 
-/***********************************************************************
- ************************* GALLERY IMAGES *******************************
- ************************************************************************/
-// Retrieve WooCommerce gallery images
-$gallery_images = $product->get_gallery_image_ids();
+        /***********************************************************************
+        ************************* GALLERY IMAGES *******************************
+        ************************************************************************/
+        // Retrieve WooCommerce gallery images
+        $gallery_images = $product->get_gallery_image_ids();
 
-$image_height = 25;  // Fixed height for uniformity
-$x_position = 10;    // Starting X position for the first image
-$y_position = $pdf->GetY();  // Current Y position in the PDF
-$spacing = 5;        // Spacing between images
-$counter = 0;
-$max_images = 4;     // Limit to 3 images only
+        $image_height = 25;  // Fixed height for uniformity
+        $x_position = 10;    // Starting X position for the first image
+        $y_position = $pdf->GetY();  // Current Y position in the PDF
+        $spacing = 5;        // Spacing between images
+        $counter = 0;
+        $max_images = 4;     // Limit to 3 images only
 
-// Check if gallery images are valid
-if (!empty($gallery_images) && is_array($gallery_images)) {
-    foreach ($gallery_images as $image_id) {
-        if ($counter >= $max_images) break; // Stop after 3 images
+        // Check if gallery images are valid
+        if (!empty($gallery_images) && is_array($gallery_images)) {
+            foreach ($gallery_images as $image_id) {
+                if ($counter >= $max_images) break; // Stop after 3 images
 
-        $image_url = wp_get_attachment_url($image_id);
-        $image_path = get_attached_file($image_id);
+                $image_url = wp_get_attachment_url($image_id);
+                $image_path = get_attached_file($image_id);
 
-        if ($image_url && file_exists($image_path)) {
-            // Get original image dimensions
-            list($original_width, $original_height) = getimagesize($image_path);
+                if ($image_url && file_exists($image_path)) {
+                    // Get original image dimensions
+                    list($original_width, $original_height) = getimagesize($image_path);
 
-            if ($original_width > 0 && $original_height > 0) {
-                // Maintain aspect ratio
-                $image_width = ($original_width / $original_height) * $image_height;
+                    if ($original_width > 0 && $original_height > 0) {
+                        // Maintain aspect ratio
+                        $image_width = ($original_width / $original_height) * $image_height;
 
-                // Place the image in the PDF
-                $pdf->Image($image_url, $x_position, $y_position, $image_width, $image_height);
+                        // Place the image in the PDF
+                        $pdf->Image($image_url, $x_position, $y_position, $image_width, $image_height);
 
-                // Update X position for the next image
-                $x_position += $image_width + $spacing;
-                $counter++;
-            } else {
-                error_log("⚠️ Invalid image dimensions for ID: " . $image_id);
+                        // Update X position for the next image
+                        $x_position += $image_width + $spacing;
+                        $counter++;
+                    } else {
+                        error_log("⚠️ Invalid image dimensions for ID: " . $image_id);
+                    }
+                } else {
+                    error_log("⚠️ Image file not found: " . $image_url);
+                }
             }
-        } else {
-            error_log("⚠️ Image file not found: " . $image_url);
-        }
-    }
 
-    // Insert a new line after images
-    $pdf->Ln($image_height + 5);
-} else {
-    error_log("⚠️ No gallery images found for this product.");
-}
+            // Insert a new line after images
+            $pdf->Ln($image_height + 5);
+        } else {
+            error_log("⚠️ No gallery images found for this product.");
+        }
 
 
 
@@ -305,92 +305,165 @@ if (!empty($gallery_images) && is_array($gallery_images)) {
         $pdf->Ln(10);
 
 
-// Retrieve "Orte" from WooCommerce product meta
-$orte = maybe_unserialize(get_post_meta($product_id, '_tamino_travel_orte', true));
+        /*******************************************************************
+         * ************************* ORTE  *********************************
+         *******************************************************************/            
+        // Retrieve "Orte" from WooCommerce product meta
+        $orte = maybe_unserialize(get_post_meta($product_id, '_tamino_travel_orte', true));
 
-if (is_array($orte) && count($orte) > 0) {
-    // Add a new page if needed
-    $pdf->AddPage();
+        if (is_array($orte) && count($orte) > 0) {
+            // Add a new page if needed
+            $pdf->AddPage();
 
-    // Title for the section
-    $pdf->SetFont($font_name, 'B', $fontsize_header);
-    $pdf->Cell(0, 10, 'Orte (Stations)', 0, 1, 'C'); // Centered title
-    $pdf->Ln(5);
-
-    foreach ($orte as $station_id) {
-        // Retrieve station post
-        $station_post = get_post($station_id);
-
-        if ($station_post) {
-            // Get station title and content
-            $station_title = encode_for_tcpdf($station_post->post_title);
-$station_content = encode_for_tcpdf(trim(preg_replace('/\s+/', ' ', strip_tags($station_post->post_content))));
-            $station_content = substr($station_content, 0, 300) . '...'; // Limit text length
-
-            // Get station image
-            $station_image_id = get_post_thumbnail_id($station_id);
-            $station_image_url = wp_get_attachment_url($station_image_id);
-
-            // Define fixed width
-            $image_width = 40; // Fixed width
-            $image_height = 0; // Height will be calculated dynamically
-
-            if ($station_image_url) {
-                // Get image dimensions
-                $image_info = getimagesize($station_image_url);
-                if ($image_info) {
-                    $original_width = $image_info[0];
-                    $original_height = $image_info[1];
-
-                    // Calculate new height based on aspect ratio
-                    $image_height = ($original_height / $original_width) * $image_width;
-                }
-            }
-
-            // Image & Text Placement Variables
-            $image_x = 10;   // Left margin for image
-            $image_y = $pdf->GetY(); // Get current position for alignment
-            $text_x = $image_x + $image_width + 10; // Text starts after image
-            $text_width = 190 - $text_x; // Remaining width for text
-
-            // Display image if available
-            if ($station_image_url && $image_height > 0) {
-                $pdf->Image($station_image_url, $image_x, $image_y, $image_width, $image_height);
-            }
-
-            // Display title next to the image
-            $pdf->SetXY($text_x, $image_y);
-            $pdf->SetFont($font_name, 'B', $fontsize_content);
-            $pdf->Cell($text_width, 6, $station_title, 0, 1); // No extra line break
-
-            // Display description immediately after title
-            $pdf->SetXY($text_x, $image_y + 7); // Moves text directly below title
-            $pdf->SetFont($font_name, '', $fontsize_content);
-            $pdf->MultiCell($text_width, 6, $station_content, 0, 'L');
-
-            // Move down a bit before adding the separator
+            // Title for the section
+            $pdf->SetFont($font_name, 'B', $fontsize_header);
+            $pdf->Cell(0, 10, 'Diese Orte werden Sie sehen', 0, 1, 'C'); // Centered title
             $pdf->Ln(5);
 
-            // Get station URL
-            $station_url = get_permalink($station_id);
-            $separator_text = "Für weitere Informationen besuchen Sie " . $station_url;
+            foreach ($orte as $station_id) {
+                // Retrieve station post
+                $station_post = get_post($station_id);
 
-            // Draw first horizontal line
-            $pdf->Cell(0, 0, '', 'T', 1, 'C'); // Thin line
+                if ($station_post) {
+                    // Get station title and content
+                    $station_title = encode_for_tcpdf($station_post->post_title);
+                    $station_content = encode_for_tcpdf(trim(preg_replace('/\s+/', ' ', strip_tags($station_post->post_content))));
+                    $station_content = substr($station_content, 0, 300) . '...'; // Limit text length
 
-            // Insert centered text
-            $pdf->SetFont($font_name, '', $fontsize_content - 2);
-            $pdf->Cell(0, 6, encode_for_tcpdf($separator_text), 0, 1, 'C');
+                    // Get station image
+                    $station_image_id = get_post_thumbnail_id($station_id);
+                    $station_image_url = wp_get_attachment_url($station_image_id);
 
-            // Draw second horizontal line
-            $pdf->Cell(0, 0, '', 'T', 1, 'C'); // Thin line
+                    // Define fixed width
+                    $image_width = 40; // Fixed width
+                    $image_height = 0; // Height will be calculated dynamically
 
-            // Move cursor below the section
-            $pdf->Ln(10);
+                    if ($station_image_url) {
+                        // Get image dimensions
+                        $image_info = getimagesize($station_image_url);
+                        if ($image_info) {
+                            $original_width = $image_info[0];
+                            $original_height = $image_info[1];
+
+                            // Calculate new height based on aspect ratio
+                            $image_height = ($original_height / $original_width) * $image_width;
+                        }
+                    }
+
+                    // Image & Text Placement Variables
+                    $image_x = 10;   // Left margin for image
+                    $image_y = $pdf->GetY(); // Get current position for alignment
+                    $text_x = $image_x + $image_width + 10; // Text starts after image
+                    $text_width = 190 - $text_x; // Remaining width for text
+
+                    // Display image if available
+                    if ($station_image_url && $image_height > 0) {
+                        $pdf->Image($station_image_url, $image_x, $image_y, $image_width, $image_height);
+                    }
+
+                    // Display title next to the image
+                    $pdf->SetXY($text_x, $image_y);
+                    $pdf->SetFont($font_name, 'B', $fontsize_content);
+                    $pdf->Cell($text_width, 6, $station_title, 0, 1); // No extra line break
+
+                    // Display description immediately after title
+                    $pdf->SetXY($text_x, $image_y + 7); // Moves text directly below title
+                    $pdf->SetFont($font_name, '', $fontsize_content);
+                    $pdf->MultiCell($text_width, 6, $station_content, 0, 'L');
+
+                    // Move down a bit before adding the separator
+                    $pdf->Ln(5);
+
+                    // Get station URL
+                    $station_url = get_permalink($station_id);
+                    $separator_text = "Für weitere Informationen besuchen Sie " . $station_url;
+
+                    // Insert left-aligned italic text
+                    $pdf->SetFont($font_name, 'I', $fontsize_content - 2); // 'I' for italic
+                    $pdf->Cell(0, 6, encode_for_tcpdf($separator_text), 0, 1, 'L'); // 'L' for left alignment
+                    $pdf->Ln(2); // Increase space below text
+
+                    // Draw second horizontal line (pushed further down)
+                    $pdf->Cell(0, 0, '', 'T', 1, 'C'); 
+                    $pdf->Ln(1); // Extra spacing below the second line
+
+                    // Move cursor below the section
+                    $pdf->Ln(10);
+                }
+            }
         }
-    }
-}
 
+
+        /*******************************************************************
+         * ************************* STATIONEN  *****************************
+         *******************************************************************/
+        // Retrieve "Stationen" from WooCommerce product meta
+        $stationen = maybe_unserialize(get_post_meta($product_id, '_tour_stations', true));
+        if (is_array($stationen) && !empty($stationen)) {
+            // Add a new page if needed
+            $pdf->AddPage();
+            
+            // Title for the section
+            $pdf->SetFont($font_name, 'B', $fontsize_header);
+            $pdf->Cell(0, 10, 'Stationen', 0, 1, 'C'); // Centered title
+            $pdf->Ln(5);
+
+            foreach ($stationen as $station) {
+                // Skip paid content stations
+                if (!empty($station['payed_content']) && $station['payed_content'] == 1) {
+                    continue;
+                }
+
+                // Get station data
+                $station_title = encode_for_tcpdf($station['title'] ?? 'No Title');
+                $station_content = encode_for_tcpdf(strip_tags($station['description'] ?? ''));
+                $station_images = $station['gallery'] ?? [];
+
+                // Image & Text Placement Variables
+                $image_width = 40; // Fixed width
+                $current_y = $pdf->GetY();
+                $image_x = 10;   // Left margin for image
+                $text_x = $image_x + $image_width + 10; // Text starts after image
+                $text_width = 190 - $text_x; // Remaining width for text
+
+                // Handle station image if available
+                $image_height = 0;
+                if (!empty($station_images) && is_array($station_images)) {
+                    $first_image_id = reset($station_images); // Get first image
+                    $image_url = wp_get_attachment_url($first_image_id);
+                    
+                    if ($image_url) {
+                        // Get image dimensions
+                        $image_info = getimagesize($image_url);
+                        if ($image_info) {
+                            $original_width = $image_info[0];
+                            $original_height = $image_info[1];
+                            // Calculate new height based on aspect ratio
+                            $image_height = ($original_height / $original_width) * $image_width;
+                            // Add image to PDF
+                            $pdf->Image($image_url, $image_x, $current_y, $image_width, $image_height);
+                        }
+                    }
+                }
+
+                // Display title next to the image
+                $pdf->SetXY($text_x, $current_y);
+                $pdf->SetFont($font_name, 'B', $fontsize_content);
+                $pdf->Cell($text_width, 6, $station_title, 0, 1);
+
+                // Display description
+                $pdf->SetXY($text_x, $current_y + 7);
+                $pdf->SetFont($font_name, '', $fontsize_content);
+                $pdf->MultiCell($text_width, 6, $station_content, 0, 'L');
+
+                // Calculate required height for text
+                $text_height = $pdf->GetY() - $current_y;
+                
+                // Move cursor below the taller of image or text
+                $total_height = max($image_height, $text_height);
+                $pdf->SetY($current_y + $total_height + 10); // Add 10 for spacing
+            }
+        }
 
 
 
