@@ -398,72 +398,98 @@ function generate_product_pdf($product_id) {
          * ************************* STATIONEN  *****************************
          *******************************************************************/
         // Retrieve "Stationen" from WooCommerce product meta
-        $stationen = maybe_unserialize(get_post_meta($product_id, '_tour_stations', true));
-        if (is_array($stationen) && !empty($stationen)) {
-            // Add a new page if needed
-            $pdf->AddPage();
+$stationen = maybe_unserialize(get_post_meta($product_id, '_tour_stations', true));
+if (is_array($stationen) && !empty($stationen)) {
+    // Add a new page if needed
+    $pdf->AddPage();
+    
+    // Title for the section
+    $pdf->SetFont($font_name, 'B', $fontsize_header);
+    $pdf->Cell(0, 10, 'Stationen', 0, 1, 'C'); // Centered title
+    $pdf->Ln(5);
+
+    foreach ($stationen as $station) {
+        $current_y = $pdf->GetY();
+        
+        // Get station data
+        $station_title = $station['title'] ?? 'No Title';
+        
+        // Add prefix for paid content
+        if (!empty($station['payed_content']) && $station['payed_content'] == 1) {
+            $station_title = "Tamino Geheimtip: " . $station_title;
+        }
+        
+        $station_title = encode_for_tcpdf($station_title);
+        $station_content = encode_for_tcpdf(strip_tags($station['description'] ?? ''));
+        $station_images = $station['gallery'] ?? [];
+
+        // Display title
+        $pdf->SetFont($font_name, 'B', $fontsize_content);
+        $pdf->Cell(0, 6, $station_title, 0, 1, 'L');
+        
+        // Display description
+        $pdf->SetFont($font_name, '', $fontsize_content);
+        $pdf->SetX(10); // Reset X to left margin
+        $pdf->MultiCell(190, 6, $station_content, 0, 'L'); // Full width for description
+        $pdf->Ln(5); // Add some space before images
+
+        // Handle station images if available
+        if (!empty($station_images) && is_array($station_images)) {
+            $uniform_height = 30; // Set uniform height for all images
+            $max_images = 3; // Limit to 3 images
+            $margin_left = 10; // Left margin
+            $available_width = 190; // Available width for images
             
-            // Title for the section
-            $pdf->SetFont($font_name, 'B', $fontsize_header);
-            $pdf->Cell(0, 10, 'Stationen', 0, 1, 'C'); // Centered title
-            $pdf->Ln(5);
+            // Calculate spacing between images based on available width
+            $total_images = min(count($station_images), $max_images);
+            $image_spacing = ($available_width - ($total_images * ($uniform_height * 1.5))) / ($total_images + 1);
+            
+            $image_count = 0;
+            $row_y = $pdf->GetY();
 
-            foreach ($stationen as $station) {
-                // Skip paid content stations
-                if (!empty($station['payed_content']) && $station['payed_content'] == 1) {
-                    continue;
-                }
-
-                // Get station data
-                $station_title = encode_for_tcpdf($station['title'] ?? 'No Title');
-                $station_content = encode_for_tcpdf(strip_tags($station['description'] ?? ''));
-                $station_images = $station['gallery'] ?? [];
-
-                // Image & Text Placement Variables
-                $image_width = 40; // Fixed width
-                $current_y = $pdf->GetY();
-                $image_x = 10;   // Left margin for image
-                $text_x = $image_x + $image_width + 10; // Text starts after image
-                $text_width = 190 - $text_x; // Remaining width for text
-
-                // Handle station image if available
-                $image_height = 0;
-                if (!empty($station_images) && is_array($station_images)) {
-                    $first_image_id = reset($station_images); // Get first image
-                    $image_url = wp_get_attachment_url($first_image_id);
-                    
-                    if ($image_url) {
-                        // Get image dimensions
-                        $image_info = getimagesize($image_url);
-                        if ($image_info) {
-                            $original_width = $image_info[0];
-                            $original_height = $image_info[1];
-                            // Calculate new height based on aspect ratio
-                            $image_height = ($original_height / $original_width) * $image_width;
-                            // Add image to PDF
-                            $pdf->Image($image_url, $image_x, $current_y, $image_width, $image_height);
-                        }
+            // Take only the first 3 images
+            $limited_images = array_slice($station_images, 0, $max_images);
+            
+            foreach ($limited_images as $image_id) {
+                $image_url = wp_get_attachment_url($image_id);
+                
+                if ($image_url) {
+                    // Get image dimensions
+                    $image_info = getimagesize($image_url);
+                    if ($image_info) {
+                        $original_width = $image_info[0];
+                        $original_height = $image_info[1];
+                        
+                        // Calculate width based on uniform height while maintaining aspect ratio
+                        $image_width = ($original_width / $original_height) * $uniform_height;
+                        
+                        // Calculate x position with even spacing
+                        $image_x = $margin_left + ($image_spacing * ($image_count + 1)) + ($image_width * $image_count);
+                        
+                        // Add image to PDF
+                        $pdf->Image($image_url, $image_x, $row_y, $image_width, $uniform_height);
+                        
+                        $image_count++;
                     }
                 }
-
-                // Display title next to the image
-                $pdf->SetXY($text_x, $current_y);
-                $pdf->SetFont($font_name, 'B', $fontsize_content);
-                $pdf->Cell($text_width, 6, $station_title, 0, 1);
-
-                // Display description
-                $pdf->SetXY($text_x, $current_y + 7);
-                $pdf->SetFont($font_name, '', $fontsize_content);
-                $pdf->MultiCell($text_width, 6, $station_content, 0, 'L');
-
-                // Calculate required height for text
-                $text_height = $pdf->GetY() - $current_y;
-                
-                // Move cursor below the taller of image or text
-                $total_height = max($image_height, $text_height);
-                $pdf->SetY($current_y + $total_height + 10); // Add 10 for spacing
             }
+            
+            // Move cursor below images if there were any
+            if ($image_count > 0) {
+                $pdf->SetY($row_y + $uniform_height);
+            }
+        
+            // Add prefix for paid content
+            if (!empty($station['payed_content']) && $station['payed_content'] == 1) {
+                $station_title = "Tamino Geheimtip: " . $station_title;
+            }
+        
         }
+
+        // Add spacing before next station
+        $pdf->Ln(15);
+    }
+}
 
 
 
