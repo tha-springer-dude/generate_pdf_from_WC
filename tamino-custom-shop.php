@@ -225,9 +225,10 @@ function generate_product_pdf($product_id) {
                 $pdf->SetXY($text_x, 30); // Move cursor beside image
                 if (!empty($short_description)) {
                     error_log("📄 Adding short description...");
+                    //error_log('Short descripton is: '.$short_description);
                     $pdf->SetFont($font_name, '', $fontsize_content);
-                    $short_description_html = '<p style="line-height: ' . $lineheight . ';">' . nl2br(esc_html(substr($short_description, 0, $shortdescription_textlength))) . '</p>';
-                    $pdf->writeHTMLCell($text_width, 0, '', '', $short_description_html, 0, 1, 0, true, 'L', true);
+                    //$short_description_html = '<p style="line-height: ' . $lineheight . ';">' . nl2br(esc_html(substr($short_description, 0, $shortdescription_textlength))) . '</p>';
+                    $pdf->writeHTMLCell($text_width, 0, '', '', $short_description, 0, 1, 0, true, 'L', true);
                 } else {
                     error_log("⚠️ No short description found.");
                 }
@@ -299,12 +300,18 @@ function generate_product_pdf($product_id) {
         // **STEP 3: DESCRIPTION**
         error_log("📝 Adding product description...");
         $pdf->SetFont($font_name, '', $fontsize_content);
-        $description = substr(esc_html($product->get_description()), 0, $description_textlength);
+        //$description = substr(esc_html($product->get_description()), 0, $description_textlength);
+        $description_plain = $product->get_description();
+        //error_log("Description is: ".$description_plain);
 
-        $pdf->MultiCell(0, $lineheight * 5, $description, 0, 'L');
+
+        //$pdf->MultiCell(0, $lineheight * 5, $description_plain, 0, 'L');
+        //$pdf->Ln(10);
+
+
+        $plain_text_content_html = '<p style="line-height:'.$lineheight.';">'.nl2br(encode_for_tcpdf(substr($description_plain, 0, $description_textlength))).'</p>';
+        $pdf->writeHTMLCell(0, 0, '', '', $plain_text_content_html, 0, 1, 0, true, 'L', true);
         $pdf->Ln(10);
-
-
         /*******************************************************************
          * ************************* ORTE  *********************************
          *******************************************************************/            
@@ -317,7 +324,7 @@ function generate_product_pdf($product_id) {
 
             // Title for the section
             $pdf->SetFont($font_name, 'B', $fontsize_header);
-            $pdf->Cell(0, 10, 'Diese Orte werden Sie sehen', 0, 1, 'C'); // Centered title
+            $pdf->Cell(0, 10, get_translation( 'Diese Orte werden sie sehen',$product_id ), 0, 1, 'C'); // Centered title
             $pdf->Ln(5);
 
             foreach ($orte as $station_id) {
@@ -328,6 +335,7 @@ function generate_product_pdf($product_id) {
                     // Get station title and content
                     $station_title = encode_for_tcpdf($station_post->post_title);
                     $station_content = encode_for_tcpdf(trim(preg_replace('/\s+/', ' ', strip_tags($station_post->post_content))));
+                    $station_content_without_tags = strip_tags($station_post->post_content);
                     $station_content = substr($station_content, 0, 300) . '...'; // Limit text length
 
                     // Get station image
@@ -369,24 +377,11 @@ function generate_product_pdf($product_id) {
                     // Display description immediately after title
                     $pdf->SetXY($text_x, $image_y + 7); // Moves text directly below title
                     $pdf->SetFont($font_name, '', $fontsize_content);
-                    $pdf->MultiCell($text_width, 6, $station_content, 0, 'L');
+                    $pdf->MultiCell($text_width, 6, $station_content_without_tags, 0, 'L');
 
                     // Move down a bit before adding the separator
                     $pdf->Ln(5);
-
-                    // Get station URL
-                    $station_url = get_permalink($station_id);
-                    $separator_text = "Für weitere Informationen besuchen Sie " . $station_url;
-
-                    // Insert left-aligned italic text
-                    $pdf->SetFont($font_name, 'I', $fontsize_content - 2); // 'I' for italic
-                    $pdf->Cell(0, 6, encode_for_tcpdf($separator_text), 0, 1, 'L'); // 'L' for left alignment
-                    $pdf->Ln(2); // Increase space below text
-
-                    // Draw second horizontal line (pushed further down)
-                    $pdf->Cell(0, 0, '', 'T', 1, 'C'); 
-                    $pdf->Ln(1); // Extra spacing below the second line
-
+ 
                     // Move cursor below the section
                     $pdf->Ln(10);
                 }
@@ -398,99 +393,108 @@ function generate_product_pdf($product_id) {
          * ************************* STATIONEN  *****************************
          *******************************************************************/
         // Retrieve "Stationen" from WooCommerce product meta
-$stationen = maybe_unserialize(get_post_meta($product_id, '_tour_stations', true));
-if (is_array($stationen) && !empty($stationen)) {
-    // Add a new page if needed
-    $pdf->AddPage();
-    
-    // Title for the section
-    $pdf->SetFont($font_name, 'B', $fontsize_header);
-    $pdf->Cell(0, 10, 'Stationen', 0, 1, 'C'); // Centered title
-    $pdf->Ln(5);
-
-    foreach ($stationen as $station) {
-        $current_y = $pdf->GetY();
-        
-        // Get station data
-        $station_title = $station['title'] ?? 'No Title';
-        
-        // Add prefix for paid content
-        if (!empty($station['payed_content']) && $station['payed_content'] == 1) {
-            $station_title = "Tamino Geheimtip: " . $station_title;
-        }
-        
-        $station_title = encode_for_tcpdf($station_title);
-        $station_content = encode_for_tcpdf(strip_tags($station['description'] ?? ''));
-        $station_images = $station['gallery'] ?? [];
-
-        // Display title
-        $pdf->SetFont($font_name, 'B', $fontsize_content);
-        $pdf->Cell(0, 6, $station_title, 0, 1, 'L');
-        
-        // Display description
-        $pdf->SetFont($font_name, '', $fontsize_content);
-        $pdf->SetX(10); // Reset X to left margin
-        $pdf->MultiCell(190, 6, $station_content, 0, 'L'); // Full width for description
-        $pdf->Ln(5); // Add some space before images
-
-        // Handle station images if available
-        if (!empty($station_images) && is_array($station_images)) {
-            $uniform_height = 30; // Set uniform height for all images
-            $max_images = 3; // Limit to 3 images
-            $margin_left = 10; // Left margin
-            $available_width = 190; // Available width for images
+        $stationen = maybe_unserialize(get_post_meta($product_id, '_tour_stations', true));
+        if (is_array($stationen) && !empty($stationen)) {
+            // Add a new page if needed
+            $pdf->AddPage();
             
-            // Calculate spacing between images based on available width
-            $total_images = min(count($station_images), $max_images);
-            $image_spacing = ($available_width - ($total_images * ($uniform_height * 1.5))) / ($total_images + 1);
-            
-            $image_count = 0;
-            $row_y = $pdf->GetY();
+            // Title for the section
+            $pdf->SetFont($font_name, 'B', $fontsize_header);
 
-            // Take only the first 3 images
-            $limited_images = array_slice($station_images, 0, $max_images);
             
-            foreach ($limited_images as $image_id) {
-                $image_url = wp_get_attachment_url($image_id);
+
+            $pdf->Cell(0, 10, get_translation( 'Stationen Ihrer Tour',$product_id ), 0, 1, 'C'); // Centered title
+                              
+            $pdf->Ln(5);
+            $counter = 0;
+            $total_stations = count($stationen);
+            
+            foreach ($stationen as $index => $station) {
+                $current_y = $pdf->GetY();
                 
-                if ($image_url) {
-                    // Get image dimensions
-                    $image_info = getimagesize($image_url);
-                    if ($image_info) {
-                        $original_width = $image_info[0];
-                        $original_height = $image_info[1];
+                // Get station data
+                $station_title = $station['title'] ?? 'No Title';
+                
+                // Add prefix for paid content
+                if (!empty($station['payed_content']) && $station['payed_content'] == 1) {
+                    $station_title = get_translation( 'Entdecker Tipp',$product_id ) .": ". $station_title;
+                }
+                
+                $station_title = encode_for_tcpdf($station_title);
+                $station_content = encode_for_tcpdf(strip_tags($station['description'] ?? ''));
+                $station_images = $station['gallery'] ?? [];
+
+                // Display title
+                $pdf->SetFont($font_name, 'B', $fontsize_content);
+                $pdf->Cell(0, 6, $station_title, 0, 1, 'L');
+
+                $pdf->Ln(5); // Add some space before description
+                
+                // Display description
+                $pdf->SetFont($font_name, '', $fontsize_content);
+                $pdf->SetX(10); // Reset X to left margin
+                $pdf->MultiCell(190, 6, $station_content, 0, 'L'); // Full width for description
+                $pdf->Ln(5); // Add some space before images
+
+                // Handle station images if available
+                if (!empty($station_images) && is_array($station_images)) {
+                    $uniform_height = 30; // Set uniform height for all images
+                    $max_images = 3; // Limit to 3 images
+                    $margin_left = 10; // Left margin
+                    $available_width = 190; // Available width for images
+                    
+                    // Calculate spacing between images based on available width
+                    $total_images = min(count($station_images), $max_images);
+                    $image_spacing = ($available_width - ($total_images * ($uniform_height * 1.5))) / ($total_images + 1);
+                    
+                    $image_count = 0;
+                    $row_y = $pdf->GetY();
+
+                    // Take only the first 3 images
+                    $limited_images = array_slice($station_images, 0, $max_images);
+                    
+                    foreach ($limited_images as $image_id) {
+                        $image_url = wp_get_attachment_url($image_id);
                         
-                        // Calculate width based on uniform height while maintaining aspect ratio
-                        $image_width = ($original_width / $original_height) * $uniform_height;
-                        
-                        // Calculate x position with even spacing
-                        $image_x = $margin_left + ($image_spacing * ($image_count + 1)) + ($image_width * $image_count);
-                        
-                        // Add image to PDF
-                        $pdf->Image($image_url, $image_x, $row_y, $image_width, $uniform_height);
-                        
-                        $image_count++;
+                        if ($image_url) {
+                            // Get image dimensions
+                            $image_info = getimagesize($image_url);
+                            if ($image_info) {
+                                $original_width = $image_info[0];
+                                $original_height = $image_info[1];
+                                
+                                // Calculate width based on uniform height while maintaining aspect ratio
+                                $image_width = ($original_width / $original_height) * $uniform_height;
+                                
+                                // Calculate x position with even spacing
+                                $image_x = $margin_left + ($image_spacing * ($image_count + 1)) + ($image_width * $image_count);
+                                
+                                // Add image to PDF
+                                $pdf->Image($image_url, $image_x, $row_y, $image_width, $uniform_height);
+                                
+                                $image_count++;
+                            }
+                        }
+                    }
+                    
+                    // Move cursor below images if there were any
+                    if ($image_count > 0) {
+                        $pdf->SetY($row_y + $uniform_height);
                     }
                 }
+
+                // Add spacing before next station
+                $pdf->Ln(15);
+
+                ++$counter;
+                
+                // Only add a new page if we're not at the last station and counter has reached 2
+                if($counter == 2 && $index < $total_stations - 1) {
+                    $pdf->AddPage();
+                    $counter = 0;
+                }
             }
-            
-            // Move cursor below images if there were any
-            if ($image_count > 0) {
-                $pdf->SetY($row_y + $uniform_height);
-            }
-        
-            // Add prefix for paid content
-            if (!empty($station['payed_content']) && $station['payed_content'] == 1) {
-                $station_title = "Tamino Geheimtip: " . $station_title;
-            }
-        
         }
-
-        // Add spacing before next station
-        $pdf->Ln(15);
-    }
-}
-
 
 
         // **STEP 4: SAVE PDF**
@@ -514,3 +518,27 @@ if (is_array($stationen) && !empty($stationen)) {
 
 /** THIS WOUL DO SOMETHING ON SAVE */
 //add_action('woocommerce_process_product_meta', 'auto_generate_product_pdf_on_save');
+
+/**
+ * Get the translation of a string with Polylang, ensuring proper initialization.
+ *
+ * @param string $string The string to be translated.
+ * @param string $context (optional) The context/category for Polylang string registration.
+ * @param string|null $language (optional) The language code (e.g., 'de', 'en'). If null, it tries to detect it.
+ * @return string Translated string or original if no translation exists.
+ */
+function get_translation($string, $product_id) {
+    error_log("get_translation() called with string: " . $string);
+                   
+    $language = pll_get_post_language($product_id);
+    error_log("Detected language from product (ID: $product_id): " . ($language ? $language : "NULL"));
+
+    // Attempt translation - corrected parameter order
+    $translated_string = pll_translate_string($string, $language, 'taminotravel');
+    if ($translated_string === $string) {
+        error_log("No translation found for string: " . $string);
+    } else {
+        error_log("Translation found: " . $translated_string);
+    }
+    return $translated_string;
+}
