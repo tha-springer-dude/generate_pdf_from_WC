@@ -81,7 +81,7 @@ function attach_pdf_to_product($product_id, $pdf_url) {
 
     // Add the generated PDF
     $downloadables[] = array(
-        'name' => 'Generated PDF',
+        'name' => get_translation( 'Reisedetails',$product_id ),
         'file' => $pdf_url
     );
 
@@ -336,7 +336,7 @@ function generate_product_pdf($product_id) {
                     $station_title = encode_for_tcpdf($station_post->post_title);
                     $station_content = encode_for_tcpdf(trim(preg_replace('/\s+/', ' ', strip_tags($station_post->post_content))));
                     $station_content_without_tags = strip_tags($station_post->post_content);
-                    $station_content = substr($station_content, 0, 300) . '...'; // Limit text length
+                    $station_content_final = substr($station_content, 0, 600) . '...'; // Limit text length
 
                     // Get station image
                     $station_image_id = get_post_thumbnail_id($station_id);
@@ -377,7 +377,7 @@ function generate_product_pdf($product_id) {
                     // Display description immediately after title
                     $pdf->SetXY($text_x, $image_y + 7); // Moves text directly below title
                     $pdf->SetFont($font_name, '', $fontsize_content);
-                    $pdf->MultiCell($text_width, 6, $station_content_without_tags, 0, 'L');
+                    $pdf->MultiCell($text_width, 6, $station_content_final, 0, 'L');
 
                     // Move down a bit before adding the separator
                     $pdf->Ln(5);
